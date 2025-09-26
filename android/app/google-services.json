@@ -1,0 +1,30 @@
+{
+  "project_info": {
+    "project_number": "65364816293",
+    "firebase_url": "https://flutter-realtime-video-default-rtdb.firebaseio.com",
+    "project_id": "flutter-realtime-video",
+    "storage_bucket": "flutter-realtime-video.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:65364816293:android:4c90c98d0f522768d4784c",
+        "android_client_info": {
+          "package_name": "com.example.flutter_realtime_video"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCkR1MDNgnoa_hI93D_secrrdSqa4lHcRk"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
