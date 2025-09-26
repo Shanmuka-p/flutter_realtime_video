@@ -65,7 +65,7 @@ class _HomeScreenState extends State<HomeScreen> {
   // Creates a new room with a random 8-character code.
   void _createRoom() {
     final String roomId = randomAlphaNumeric(8).toUpperCase();
-     Navigator.push(
+      Navigator.push(
       context,
       MaterialPageRoute(
         builder: (_) => CallScreen(roomId: roomId, isCreator: true),
@@ -75,15 +75,15 @@ class _HomeScreenState extends State<HomeScreen> {
   
   // Joins an existing room using the code from the text field.
   void _joinRoom() {
-     if (_roomCodeController.text.isNotEmpty) {
-       Navigator.push(
+      if (_roomCodeController.text.isNotEmpty) {
+        Navigator.push(
         context,
         MaterialPageRoute(
           builder: (_) => CallScreen(roomId: _roomCodeController.text.toUpperCase(), isCreator: false),
         ),
       );
     } else {
-       FlutterToastr.show("Please enter a room code", context, duration: FlutterToastr.lengthShort);
+        FlutterToastr.show("Please enter a room code", context, duration: FlutterToastr.lengthShort);
     }
   }
 
@@ -147,10 +147,10 @@ class _HomeScreenState extends State<HomeScreen> {
                     onPressed: _joinRoom,
                     icon: const Icon(Icons.group_add_rounded),
                     label: const Text('Join Room'),
-                     style: ElevatedButton.styleFrom(
-                      minimumSize: const Size(double.infinity, 50),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    ),
+                      style: ElevatedButton.styleFrom(
+                        minimumSize: const Size(double.infinity, 50),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
                   ),
                 ],
               ),
@@ -187,6 +187,8 @@ class _CallScreenState extends State<CallScreen> {
   bool _isMicOn = true;
   bool _isConnected = false;
   bool _isScreenSharing = false;
+  // NEW: Loading state to prevent UI from building before initialization is complete.
+  bool _isLoading = true;
 
   @override
   void initState() {
@@ -204,6 +206,12 @@ class _CallScreenState extends State<CallScreen> {
     } else {
       await _listenForOffer();
     }
+    // NEW: Set loading to false after all setup is done.
+    if(mounted) {
+      setState(() {
+        _isLoading = false;
+      });
+    }
   }
 
   Future<void> _createPeerConnection() async {
@@ -214,26 +222,37 @@ class _CallScreenState extends State<CallScreen> {
     };
     
     _peerConnection = await createPeerConnection(configuration);
-    _localStream = await navigator.mediaDevices.getUserMedia({'video': true, 'audio': true});
-    _localRenderer.srcObject = _localStream;
 
-    _localStream?.getTracks().forEach((track) => _peerConnection?.addTrack(track, _localStream!));
-
+    // FIXED: Wrap media acquisition in a try-catch block for robustness.
+    try {
+      _localStream = await navigator.mediaDevices.getUserMedia({'video': true, 'audio': true});
+      _localRenderer.srcObject = _localStream;
+      _localStream?.getTracks().forEach((track) => _peerConnection?.addTrack(track, _localStream!));
+    } catch(e) {
+      print("Error getting user media: $e");
+      // Handle error appropriately, maybe show a dialog to the user.
+    }
+    
     _peerConnection?.onTrack = (event) {
-      setState(() {
-        _remoteStream = event.streams[0];
-        _remoteRenderer.srcObject = _remoteStream;
-        _isConnected = true;
-      });
+      if (mounted) {
+        setState(() {
+          _remoteStream = event.streams[0];
+          _remoteRenderer.srcObject = _remoteStream;
+          _isConnected = true;
+        });
+      }
     };
-    setState(() {});
   }
 
   // Called by the room creator to initiate the connection.
   Future<void> _createOffer() async {
     if (_peerConnection == null) return;
     DocumentReference roomRef = _firestore.collection('rooms').doc(widget.roomId);
-    _peerConnection!.onIceCandidate = (candidate) => roomRef.collection('callerCandidates').add(candidate.toMap());
+    _peerConnection!.onIceCandidate = (candidate) {
+      if(candidate != null) {
+        roomRef.collection('callerCandidates').add(candidate.toMap());
+      }
+    };
     
     RTCSessionDescription offer = await _peerConnection!.createOffer();
     await _peerConnection!.setLocalDescription(offer);
@@ -271,12 +290,14 @@ class _CallScreenState extends State<CallScreen> {
     
     roomRef.snapshots().listen((snapshot) async {
       if (!snapshot.exists || _peerConnection?.getRemoteDescription() != null) return;
-      final data = snapshot.data() as Map<String, dynamic>;
-      if (data.containsKey('offer')) {
-        final offer = RTCSessionDescription(data['offer']['sdp'], data['offer']['type']);
-        await _peerConnection!.setRemoteDescription(offer);
-        await _createAnswer();
-      }
+      
+      final data = snapshot.data() as Map<String, dynamic>?;
+      if (data == null || !data.containsKey('offer')) return;
+
+      final offerData = data['offer'] as Map<String, dynamic>;
+      final offer = RTCSessionDescription(offerData['sdp'], offerData['type']);
+      await _peerConnection!.setRemoteDescription(offer);
+      await _createAnswer();
     });
 
     roomRef.collection('callerCandidates').snapshots().listen((snapshot) {
@@ -296,15 +317,44 @@ class _CallScreenState extends State<CallScreen> {
   }
   
   // Creates an answer to the received offer.
-  Future<void> _createAnswer() async {
-    if (_peerConnection == null) return;
-    DocumentReference roomRef = _firestore.collection('rooms').doc(widget.roomId);
-    _peerConnection!.onIceCandidate = (candidate) => roomRef.collection('calleeCandidates').add(candidate.toMap());
-    
-    RTCSessionDescription answer = await _peerConnection!.createAnswer();
-    await _peerConnection!.setLocalDescription(answer);
-    await roomRef.update({'answer': answer.toMap()});
+ // IN CallScreen CLASS
+
+Future<void> _createAnswer() async {
+  if (_peerConnection == null) {
+    print("ERROR: _createAnswer called but peer connection is null.");
+    return;
   }
+  print("Creating answer...");
+  DocumentReference roomRef = _firestore.collection('rooms').doc(widget.roomId);
+
+  // Assign onIceCandidate here to send to the correct subcollection
+  _peerConnection!.onIceCandidate = (candidate) {
+    if (candidate != null) {
+      print("-> Sending callee candidate to Firestore."); // Added an arrow for easy spotting
+      roomRef.collection('calleeCandidates').add(candidate.toMap());
+    } else {
+      print("End of callee candidates.");
+    }
+  };
+
+  try {
+    // Step 1: Create the answer
+    RTCSessionDescription answer = await _peerConnection!.createAnswer();
+    print("Answer created successfully in memory.");
+
+    // Step 2: Set the local description. THIS IS THE STEP THAT TRIGGERS onIceCandidate.
+    await _peerConnection!.setLocalDescription(answer);
+    print("Set local description (answer) successfully. ICE gathering should now start.");
+
+    // Step 3: Write the answer to Firestore
+    await roomRef.update({'answer': answer.toMap()});
+    print("Answer updated in Firestore.");
+
+  } catch (e) {
+    print("FATAL ERROR during _createAnswer: $e");
+    // This will tell us if the process itself is failing.
+  }
+}
 
   // Toggles between camera and screen sharing.
   Future<void> _toggleScreenShare() async {
@@ -404,12 +454,15 @@ class _CallScreenState extends State<CallScreen> {
       await _localRenderer.dispose();
       await _remoteRenderer.dispose();
       
-      DocumentReference roomRef = _firestore.collection('rooms').doc(widget.roomId);
-      var calleeCandidates = await roomRef.collection('calleeCandidates').get();
-      calleeCandidates.docs.forEach((doc) => doc.reference.delete());
-      var callerCandidates = await roomRef.collection('callerCandidates').get();
-      callerCandidates.docs.forEach((doc) => doc.reference.delete());
-      await roomRef.delete();
+      // Clean up Firestore data
+      if (widget.isCreator) {
+        DocumentReference roomRef = _firestore.collection('rooms').doc(widget.roomId);
+        var calleeCandidates = await roomRef.collection('calleeCandidates').get();
+        calleeCandidates.docs.forEach((doc) => doc.reference.delete());
+        var callerCandidates = await roomRef.collection('callerCandidates').get();
+        callerCandidates.docs.forEach((doc) => doc.reference.delete());
+        await roomRef.delete();
+      }
     } catch (e) {
       print("Error during hangup: $e");
     } finally {
@@ -422,6 +475,8 @@ class _CallScreenState extends State<CallScreen> {
     _localRenderer.dispose();
     _remoteRenderer.dispose();
     _localStream?.dispose();
+    _remoteStream?.dispose();
+    _screenShareStream?.dispose();
     _peerConnection?.close();
     super.dispose();
   }
@@ -430,7 +485,10 @@ class _CallScreenState extends State<CallScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.black87,
-      body: SafeArea(
+      // FIXED: Use a simple loader while camera and connection are initializing.
+      body: _isLoading 
+        ? const Center(child: CircularProgressIndicator(color: Colors.white))
+        : SafeArea(
         child: Stack(
           children: [
             // Remote Video (Full Screen)
@@ -468,9 +526,9 @@ class _CallScreenState extends State<CallScreen> {
                     Text('Room: ${widget.roomId}', style: const TextStyle(color: Colors.white, fontSize: 16)),
                     IconButton(icon: const Icon(Icons.share, color: Colors.white), onPressed: () => Share.share('Join my video call: ${widget.roomId}')),
                     IconButton(icon: const Icon(Icons.copy, color: Colors.white), onPressed: () {
-                       FlutterClipboard.copy(widget.roomId).then((_){
-                         FlutterToastr.show("Room code copied!", context);
-                       });
+                        FlutterClipboard.copy(widget.roomId).then((_){
+                          FlutterToastr.show("Room code copied!", context);
+                        });
                     }),
                   ],
                 ),
@@ -526,7 +584,3 @@ class _CallScreenState extends State<CallScreen> {
     );
   }
 }
-
-
-
-
