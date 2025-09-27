@@ -28,6 +28,7 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+
       debugShowCheckedModeBanner: false,
       title: 'Real-time Video & Screen Share',
       theme: ThemeData(
@@ -44,8 +45,6 @@ class MyApp extends StatelessWidget {
     );
   }
 }
-
-
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
@@ -61,8 +60,6 @@ class _HomeScreenState extends State<HomeScreen> {
     _roomCodeController.dispose();
     super.dispose();
   }
-  
-  // Creates a new room with a random 8-character code.
   void _createRoom() {
     final String roomId = randomAlphaNumeric(8).toUpperCase();
       Navigator.push(
@@ -72,8 +69,6 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
   }
-  
-  // Joins an existing room using the code from the text field.
   void _joinRoom() {
       if (_roomCodeController.text.isNotEmpty) {
         Navigator.push(
@@ -187,7 +182,7 @@ class _CallScreenState extends State<CallScreen> {
   bool _isMicOn = true;
   bool _isConnected = false;
   bool _isScreenSharing = false;
-  // NEW: Loading state to prevent UI from building before initialization is complete.
+ 
   bool _isLoading = true;
 
   @override
