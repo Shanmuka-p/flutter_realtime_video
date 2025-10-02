@@ -279,7 +279,7 @@ class _CallScreenState extends State<CallScreen> {
   }
 
   // Called by the room joiner to listen for an offer and respond.
-  Future<void> _listenForOffer() async {
+  Future<void>   _listenForOffer() async {
     if (_peerConnection == null) return;
     DocumentReference roomRef = _firestore.collection('rooms').doc(widget.roomId);
     
@@ -577,5 +577,18 @@ Future<void> _createAnswer() async {
         child: Icon(icon, color: Colors.white),
       ),
     );
+  }
+}
+class video_demo extends StatefulWidget {
+  const video_demo({super.key});
+
+  @override
+  State<video_demo> createState() => _video_demoState();
+}
+
+class _video_demoState extends State<video_demo> {
+  @override
+  Widget build(BuildContext context) {
+    return const Placeholder();
   }
 }
